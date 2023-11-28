@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Page not found");
     }
 
-    let filename = format!("products_{}.csv", num_page);
+    let filename = format!("results_{}.csv", num_page);
     let path = std::path::Path::new(&filename);
     let mut writer = csv::Writer::from_path(path).unwrap();
 
