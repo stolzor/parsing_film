@@ -29,17 +29,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let num_page = get_num_page();
 
     let client = reqwest::Client::builder().build()?;
-    let response = get_page(&client, &num_page).await?;
-    if response.status() != 200 {
-        println!("Page not found");
+    
+    for i in 0..num_page.parse::<i32>().unwrap(){
+        let current_num_page = format!("{i}");
+        let response = get_page(&client, &current_num_page).await?;
+        if response.status() != 200 {
+            println!("Page not found");
+        }
+
+        let mut writer = get_writer(&current_num_page);
+
+        let response = response.text().await?;
+        parsing_html(&response, &mut writer).await;
+        writer.flush().unwrap();
+        println!("{} complete!", i+1);
     }
 
-    let mut writer = get_writer(&num_page);
-
-    let response = response.text().await?;
-    parsing_html(&response, &mut writer);
-
-    writer.flush().unwrap();
     Ok(())
 }
 
@@ -57,6 +62,7 @@ fn get_writer(num_page: &str) -> csv::Writer<std::fs::File> {
     let filename = format!("results_{}.csv", num_page);
     let path = std::path::Path::new(&filename);
     let mut writer = csv::Writer::from_path(path).unwrap();
+
     writer
         .write_record(&["url", "name", "mail_rate", "imdb_rate"])
         .unwrap();
@@ -66,9 +72,8 @@ fn get_writer(num_page: &str) -> csv::Writer<std::fs::File> {
 
 
 fn get_num_page() -> String {
-    println!("Enter page: ");
+    println!("Enter how many pages: ");
     let mut num_page = String::new();
-
     io::stdin().read_line(&mut num_page).expect("Failed read to line");
     let num_page = String::from(num_page.trim());
 
@@ -76,7 +81,7 @@ fn get_num_page() -> String {
 }
 
 
-fn parsing_html(response: &String, writer: &mut csv::Writer<std::fs::File>) {
+async fn parsing_html(response: &String, writer: &mut csv::Writer<std::fs::File>) {
     let document = scraper::Html::parse_document(&response);
     let cols_selector = scraper::Selector::parse(r#"div[class="cols cols_percent cols_margin"]"#).unwrap();
     let wrapper_selector = scraper::Selector::parse(r#"div[class="cols__wrapper"]"#).unwrap();
@@ -94,14 +99,18 @@ fn parsing_html(response: &String, writer: &mut csv::Writer<std::fs::File>) {
     for child in childs {
         let title_element = child.select(&title_selector).next().unwrap();
         let title_href_part = title_element.select(&href_selector).next().unwrap().attr("href").unwrap();
+        let imdb_rate = match child.select(&imdb_rate_selector).next() {
+            None => String::from("None"),
+            Some(v) => v.text().collect::<String>()
+        };
 
         let film = FilmFields {
             title_name: title_element.text().collect::<String>(),
             title_href: format!("{domain}{title_href_part}"),
             mail_rate: child.select(&mail_rate_selector).next().unwrap().text().collect::<String>(),
-            imdb_rate: child.select(&imdb_rate_selector).next().unwrap().text().collect::<String>()
+            imdb_rate: imdb_rate
         };
-
+        
         writer.write_record(film.get_values()).unwrap();
     }
 
