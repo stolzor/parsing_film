@@ -1,6 +1,8 @@
 extern crate yaml_rust;
 use postgres::{Client, NoTls};
 
+use crate::status::QueryStatus;
+
 mod database;
 mod status;
 mod utils;
@@ -22,7 +24,19 @@ fn main() -> Result<(), postgres::Error> {
     println!("Status {:?}", init_table);
 
     // Parser module
-    parser::start_parsing();
+    let mut counter: i128 = 0;
+    let parsing_result = parser::start_parsing();
+    for film in parsing_result {
+        match database::films::query_get_films(&mut client, &film) {
+            QueryStatus::Complete => continue,
+            QueryStatus::Error => ()
+        };
+        match database::films::query_create_films(& mut client, &film) {
+            QueryStatus::Complete => counter += 1,
+            QueryStatus::Error => counter += 0
+        };
+    }
+    println!("How many movies have been uploaded in total: {}", counter);
 
     Ok(())
 }

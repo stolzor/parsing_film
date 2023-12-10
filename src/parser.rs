@@ -1,67 +1,33 @@
 use std::io;
 #[derive(Debug)]
-struct FilmFields {
-    title_name: String,
-    title_href: String,
-    mail_rate: String,
-    imdb_rate: String
+pub struct FilmFields {
+    pub page: i32,
+    pub title_name: String,
+    pub title_href: String,
+    pub mail_rate: String,
+    pub imdb_rate: String
 }
 
-impl FilmFields {
-    fn get_values(&self) -> Vec<&String> {
-        let mut result = Vec::new();
-        let fields = [
-            &self.title_href, &self.title_name, &self.mail_rate, &self.imdb_rate
-        ];
-
-        for name in fields {
-            result.push(name);
-        }
-
-        result
-    }
-}
-
-pub fn start_parsing() -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_parsing() -> Vec<FilmFields> {
     let num_page = get_num_page();
+    let type_parsing = get_type_parsing();
 
-    for i in 0..num_page.parse::<i32>().unwrap(){
-        let current_num_page = format!("{i}");
-        let response = get_page(&current_num_page)?;
-        if response.status() != 200 {
-            println!("Page not found");
-        }
+    let result: Vec<FilmFields>;
 
-        let response = response.text().unwrap();
-        let films = parsing_html(&response);
-        println!("{:?}", films);
-
-        println!("{} complete!", i+1);
+    if type_parsing == "s" {
+        result = parsing_page(&num_page);
+    } else {
+        result = parsing_pages(&num_page);
     }
-
-    Ok(())
+    
+    result
 }
-
 
 fn get_page(num_page: &str) -> Result<reqwest::blocking::Response, reqwest::Error> {
     let response = reqwest::blocking::get(format!("https://kino.mail.ru/cinema/all/?page={}", num_page));
 
     response
 }
-
-
-fn get_writer(num_page: &str) -> csv::Writer<std::fs::File> {
-    let filename = format!("results_{}.csv", num_page);
-    let path = std::path::Path::new(&filename);
-    let mut writer = csv::Writer::from_path(path).unwrap();
-
-    writer
-        .write_record(&["url", "name", "mail_rate", "imdb_rate"])
-        .unwrap();
-
-    writer
-}
-
 
 fn get_num_page() -> String {
     println!("Enter how many pages: ");
@@ -72,8 +38,56 @@ fn get_num_page() -> String {
     num_page
 }
 
+fn get_type_parsing() -> String {
+    println!("Enter type parsing (s - only one page, m - it will start with 0 and end with the number you entered): ");
+    let mut type_parsing = String::new();
+    io::stdin().read_line(&mut type_parsing).expect("Failed read to line");
+    let type_parsing = String::from(type_parsing.trim());
 
-fn parsing_html(response: &String) -> Vec<FilmFields> {
+    match type_parsing.as_str() {
+        "m" => (),
+        "s" => (),
+        _ => panic!(r#"Enter only "s" or "m" mode"#)
+    }
+
+    type_parsing
+}
+
+fn parsing_page(num_page: & String) -> Vec<FilmFields> {
+    let response = get_page(&num_page).unwrap();
+    if response.status() != 200 {
+        println!("Page not found");
+    }
+
+    let response = response.text().unwrap();
+    let films = parsing_html(&response, &num_page.parse::<i32>().unwrap());
+
+    println!("{} complete!", num_page);
+
+    films
+}
+
+fn parsing_pages(num_page: & String) -> Vec<FilmFields> {
+    let mut films: Vec<FilmFields> = Vec::new();
+
+    for i in 1..num_page.parse::<i32>().unwrap() + 1 {
+        let current_num_page = format!("{i}");
+        let response = get_page(&current_num_page).unwrap();
+        if response.status() != 200 {
+            println!("Page not found");
+        }
+
+        let response = response.text().unwrap();
+        let page = parsing_html(&response, &i);
+        films.extend(page);
+
+        println!("{} complete!", i);
+    }
+
+    films
+}
+
+fn parsing_html(response: &String, n_page: & i32) -> Vec<FilmFields> {
     let mut films: Vec<FilmFields> = Vec::new();
 
     let document = scraper::Html::parse_document(&response);
@@ -99,6 +113,7 @@ fn parsing_html(response: &String) -> Vec<FilmFields> {
         };
 
         let film = FilmFields {
+            page: *n_page,
             title_name: title_element.text().collect::<String>(),
             title_href: format!("{domain}{title_href_part}"),
             mail_rate: child.select(&mail_rate_selector).next().unwrap().text().collect::<String>(),
