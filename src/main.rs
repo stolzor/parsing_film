@@ -1,42 +1,27 @@
-extern crate yaml_rust;
-use postgres::{Client, NoTls};
+use teloxide::{prelude::*, utils::command::BotCommands};
 
-use crate::status::QueryStatus;
+#[tokio::main]
+async fn main() {
+    pretty_env_logger::init();
+    log::info!("Starting command bot...");
 
-mod database;
-mod status;
-mod utils;
-mod parser;
+    let bot = Bot::from_env();
 
-fn main() -> Result<(), postgres::Error> {
-    // Init config from dev.yaml
-    let config = utils::get_config();
-    let db_url = config["DB_URL"].as_str().unwrap();
+    Command::repl(bot, answer).await;
+}
 
-    // Init client
-    let mut client = Client::connect(db_url, NoTls)?;
+#[derive(BotCommands, Clone)]
+#[command(rename_rule = "lowercase", description = "These commands are supported:")]
+enum Command {
+    #[command(description="display this text")]
+    Help
+}
 
-    // Init table
-    let init_table = match database::films::init_table(& mut client) {
-        status::QueryStatus::Complete => 200,
-        status::QueryStatus::Error => panic!("Some kind of error when initializing the table")
+
+async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
+    match cmd {
+        Command::Help => bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?
     };
-    println!("Status {:?}", init_table);
-
-    // Parser module
-    let mut counter: i128 = 0;
-    let parsing_result = parser::start_parsing();
-    for film in parsing_result {
-        match database::films::query_get_films(&mut client, &film) {
-            QueryStatus::Complete => continue,
-            QueryStatus::Error => ()
-        };
-        match database::films::query_create_films(& mut client, &film) {
-            QueryStatus::Complete => counter += 1,
-            QueryStatus::Error => counter += 0
-        };
-    }
-    println!("How many movies have been uploaded in total: {}", counter);
 
     Ok(())
 }
